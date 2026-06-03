@@ -6,6 +6,8 @@
     <title>Galería de Fotos - Cruz Azul Cajigal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap');
         * { font-family: 'Montserrat', sans-serif; margin: 0; padding: 0; box-sizing: border-box; }
@@ -30,7 +32,6 @@
         }
         .boton:hover { background-color: #5a6268; }
 
-        /* ==== ESTILO DEL BOTÓN NUEVO QUE AGREGUÉ ==== */
         .boton-nuevo { 
             display: inline-block; padding: 12px 25px; background-color: #001f54; 
             color: #ffd100; text-decoration: none; border-radius: 8px; font-weight: bold; 
@@ -136,15 +137,9 @@
         <h1 class="text-3xl md:text-4xl font-black text-yellow-400 mb-2">📸 GALERÍA DE FOTOS</h1>
         <p class="text-blue-100">Sube o pega lo que quieras, se queda para siempre y se ve en todos lados</p>
         
-        <!-- ==== AQUÍ ESTÁN LOS BOTONES LISTOS ==== -->
         <div class="boton-volver">
-            <!-- Botón original -->
             <a href="index.html" class="boton">⬅️ Volver al Inicio</a>
-            
-            <!-- 👇 ESTE ES EL BOTÓN NUEVO QUE TE HICE, YA FUNCIONA 👇 -->
-            <a href="https://www.google.com" target="_blank" class="boton-nuevo">
-                🔗 IR A OTRO LUGAR
-            </a>
+            <a href="https://www.google.com" target="_blank" class="boton-nuevo">🔗 IR A OTRO LUGAR</a>
         </div>
     </header>
 
@@ -156,7 +151,6 @@
         <div id="alertaInfo" class="alerta"></div>
 
         <div class="opciones text-center">
-            <!-- 📤 OPCIÓN 1: SUBIR DESDE TU CELULAR O PC -->
             <h3 class="text-blue-900 font-bold mb-2">📤 Subir archivos</h3>
             <input type="file" id="subirArchivos" multiple accept="image/*" style="display:none" onchange="procesarArchivos(event)">
             <input type="file" id="subirCarpeta" webkitdirectory directory multiple accept="image/*" style="display:none" onchange="procesarArchivos(event)">
@@ -167,7 +161,6 @@
 
             <hr class="my-4 border-gray-300">
 
-            <!-- 🔗 OPCIÓN 2: PEGAR ENLACE DE GOOGLE DRIVE -->
             <h3 class="text-blue-900 font-bold mb-2">🔗 Pegar enlace de Drive</h3>
             <input type="text" id="enlaceEntrada" class="input-campo" placeholder="👉 Enlace de foto O carpeta completa">
             <br>
@@ -181,7 +174,6 @@
         </div>
     </main>
 
-    <!-- MODAL PARA VER GRANDE -->
     <div id="modalImagen" class="modal-imagen" onclick="cerrarModal()">
         <span class="cerrar">&times;</span>
         <img class="modal-contenido" id="imagenAmpliada">
@@ -192,131 +184,101 @@
     </footer>
 
     <script>
-        // 🔑 BASE DE DATOS NUEVA (LIMPIA, SIN ERRORES ANTERIORES)
-        let db;
-        const DB_NOMBRE = "Galeria_Fotos_Nueva";
-        const DB_VERSION = 1;
-
-        const solicitud = indexedDB.open(DB_NOMBRE, DB_VERSION);
-
-        solicitud.onupgradeneeded = (e) => {
-            db = e.target.result;
-            if (!db.objectStoreNames.contains("fotos_guardadas")) {
-                db.createObjectStore("fotos_guardadas", { keyPath: "id", autoIncrement: true });
-            }
+        // CONFIGURACIÓN PARA QUE TODOS VEAN LO MISMO
+        const firebaseConfig = {
+            apiKey: "AIzaSyB6g2ZbK5X7QfGxqJdZbKfYvXcLmRzPnQeW",
+            authDomain: "galeria-publica.firebaseapp.com",
+            databaseURL: "https://galeria-publica-default-rtdb.firebaseio.com",
+            projectId: "galeria-publica",
+            storageBucket: "galeria-publica.appspot.com",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abc123def456ghi789"
         };
 
-        solicitud.onsuccess = (e) => {
-            db = e.target.result;
-            cargarTodoLoGuardado();
-        };
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const referenciaFotos = db.ref("fotos_publicas");
 
-        // ==============================================
-        // 📤 SUBIR DESDE CELULAR / PC (SIEMPRE FUNCIONA)
-        // ==============================================
         function procesarArchivos(event) {
             const archivos = event.target.files;
             if (!archivos.length) return;
-
-            mostrarAlerta("🔄 Subiendo...");
+            mostrarAlerta("🔄 Subiendo para todos...");
 
             for (let i = 0; i < archivos.length; i++) {
                 const archivo = archivos[i];
                 if (!archivo.type.includes('image')) continue;
-
                 const lector = new FileReader();
                 lector.onload = function(e) {
-                    guardarEnBase(archivo.name, e.target.result);
+                    guardarEnBasePublica(archivo.name, e.target.result);
                 };
                 lector.readAsDataURL(archivo);
             }
-
-            setTimeout(() => { ocultarAlerta(); }, 1500);
+            setTimeout(() => { ocultarAlerta(); }, 2000);
         }
 
-        // ==============================================
-        // 🔗 PEGAR ENLACE (ARREGLADO AL 100% PARA DRIVE)
-        // ==============================================
         function procesarEnlace() {
             const enlace = document.getElementById("enlaceEntrada").value.trim();
             const nombre = document.getElementById("nombreEntrada").value.trim() || "Foto_" + Date.now();
-            
             if (!enlace) { mostrarAlerta("❌ Pon un enlace", true); return; }
-
             mostrarAlerta("🔍 Procesando...");
-
             let enlaceFinal = "";
 
-            // ✅ FORMULA DEFINITIVA PARA QUE SALGA LA IMAGEN
             if(enlace.includes('drive.google.com')) {
                 try {
                     let id = "";
-                    // Sacamos el ID de cualquier tipo de enlace
                     if(enlace.includes('/file/d/')) {
                         id = enlace.split('/d/')[1].split('/')[0];
                     } else if(enlace.includes('id=')) {
                         id = enlace.split('id=')[1].split('&')[0];
                     } else if(enlace.includes('/folders/')) {
                         id = enlace.split('/folders/')[1].split('?')[0];
-                        // Carpeta: cargamos varias fotos
                         for(let i=1; i<=30; i++) { 
                             let url = `https://drive.google.com/thumbnail?id=${id}&sz=w1600&index=${i}&t=${Date.now()}`;
-                            guardarEnBase(`Foto_${i}`, url);
+                            guardarEnBasePublica(`Foto_${i}`, url);
                         }
-                        mostrarAlerta("✅ Carpeta cargada");
+                        mostrarAlerta("✅ Carpeta cargada para todos");
                         document.getElementById("enlaceEntrada").value = "";
                         document.getElementById("nombreEntrada").value = "";
                         return;
                     }
-
                     if(id) {
-                        // 🟢 ENLACE DEFINITIVO QUE NUNCA FALLA
                         enlaceFinal = `https://drive.google.com/thumbnail?id=${id}&sz=w1600&t=${Date.now()}`;
-                        guardarEnBase(nombre, enlaceFinal);
-                        mostrarAlerta("✅ Foto lista");
+                        guardarEnBasePublica(nombre, enlaceFinal);
+                        mostrarAlerta("✅ Foto lista para todos");
                     }
-
                 } catch (e) {
                     mostrarAlerta("❌ Enlace no válido", true);
                     return;
                 }
             } else {
-                // Otra página
                 enlaceFinal = enlace;
-                guardarEnBase(nombre, enlaceFinal);
+                guardarEnBasePublica(nombre, enlaceFinal);
             }
-
             document.getElementById("enlaceEntrada").value = "";
             document.getElementById("nombreEntrada").value = "";
             setTimeout(() => { ocultarAlerta(); }, 2000);
         }
 
-        // ==============================================
-        // 💾 GUARDAR Y MOSTRAR
-        // ==============================================
-        function guardarEnBase(nombre, datos) {
-            const tx = db.transaction("fotos_guardadas", "readwrite");
-            tx.objectStore("fotos_guardadas").add({ nombre: nombre, datos: datos });
-            tx.oncomplete = () => {
-                mostrarEnPantalla(nombre, datos);
-            };
+        function guardarEnBasePublica(nombre, datos) {
+            referenciaFotos.push().set({ nombre: nombre, datos: datos });
         }
 
-        function cargarTodoLoGuardado() {
-            const tx = db.transaction("fotos_guardadas", "readonly");
-            const todos = tx.objectStore("fotos_guardadas").getAll();
-            todos.onsuccess = () => {
-                todos.result.forEach(item => {
-                    mostrarEnPantalla(item.nombre, item.datos);
+        referenciaFotos.on("value", (snapshot) => {
+            const contenedor = document.getElementById("contenedorImagenes");
+            contenedor.innerHTML = "";
+            const datos = snapshot.val();
+            if(datos) {
+                Object.keys(datos).forEach(key => {
+                    const item = datos[key];
+                    mostrarEnPantalla(item.nombre, item.datos, key);
                 });
-            };
-        }
+            }
+        });
 
-        function mostrarEnPantalla(nombre, datos) {
+        function mostrarEnPantalla(nombre, datos, idUnico) {
             const contenedor = document.getElementById("contenedorImagenes");
             const div = document.createElement('div');
             div.className = 'imagen-item';
-            const idUnico = btoa(nombre + datos);
             div.id = `img-${idUnico}`;
 
             div.innerHTML = `
@@ -326,31 +288,15 @@
                 <a href="${datos}" download="${nombre}" class="btn-descarga" title="Descargar"><i class="fas fa-download"></i></a>
                 <div class="nombre-imagen">${nombre}</div>
             `;
-
             contenedor.appendChild(div);
         }
 
-        // ==============================================
-        // ❌ BORRAR
-        // ==============================================
         function borrarElemento(idUnico) {
-            if(confirm("¿Borrar para siempre?")) {
-                const tx = db.transaction("fotos_guardadas", "readwrite");
-                const todos = tx.objectStore("fotos_guardadas").getAll();
-                todos.onsuccess = () => {
-                    todos.result.forEach(item => {
-                        if(btoa(item.nombre + item.datos) === idUnico) {
-                            tx.objectStore("fotos_guardadas").delete(item.id);
-                        }
-                    });
-                };
-                document.getElementById(`img-${idUnico}`).remove();
+            if(confirm("¿Borrar para siempre para todos?")) {
+                referenciaFotos.child(idUnico).remove();
             }
         }
 
-        // ==============================================
-        // 🔍 VER GRANDE
-        // ==============================================
         function verImagenGrande(ruta) {
             const modal = document.getElementById("modalImagen");
             document.getElementById("imagenAmpliada").src = ruta;
@@ -361,9 +307,6 @@
             document.getElementById("modalImagen").style.display = "none";
         }
 
-        // ==============================================
-        // ⚠️ ALERTAS
-        // ==============================================
         function mostrarAlerta(texto, esError=false) {
             const alerta = document.getElementById("alertaInfo");
             alerta.textContent = texto;
